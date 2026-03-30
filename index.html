@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>摩托车油耗·优惠统计</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f7f8fa;margin:0;padding:16px}
+.card{background:#fff;border-radius:16px;padding:20px;margin-bottom:16px;box-shadow:0 2px 10px rgba(0,0,0,0.06)}
+h2{margin-top:0;color:#222}
+input{width:100%;padding:14px;border:1px solid #e4e7ed;border-radius:12px;margin:8px 0;font-size:16px}
+button{width:100%;padding:16px;border:none;border-radius:12px;background:#007bff;color:white;font-size:16px;margin-top:8px}
+.btn-red{background:#ff4d4f}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}
+.item{padding:14px;border-radius:12px;background:#f8f9fa}
+.label{font-size:14px;color:#666}
+.number{font-size:20px;font-weight:600;color:#222}
+.number.red{color:#ff4d4f}
+.number.green{color:#009e5f}
+.log{padding:12px;border-bottom:1px solid #f0f0f0;font-size:14px;color:#444}
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h2>🏍️ 摩托车油耗记录</h2>
+  <input type="number" id="odo" placeholder="当前里程 (km)" step="0.1">
+  <input type="number" id="price_tag" placeholder="挂牌油价 (元/L)" step="0.01">
+  <input type="number" id="liter" placeholder="加油升数 (L)" step="0.01">
+  <input type="number" id="pay_actual" placeholder="实际支付金额 (元)" step="0.01">
+  <button onclick="save()">记录并计算</button>
+  <button class="btn-red" onclick="resetData()">重置所有记录</button>
+</div>
+
+<div class="card">
+  <div id="result"></div>
+</div>
+
+<div class="card">
+  <h3>📜 最近记录</h3>
+  <div id="logs"></div>
+</div>
+
+<script>
+// ========== 你只需要改这里 2 个值 ==========
+const GIST_ID = "71a636df892bea72e8511218b9cc4e5c"
+const GIST_TOKEN = "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"
+// ==========================================
+
+let store = {
+  lastOdo: null,
+  totalKm: 0,
+  totalL: 0,
+  totalPay: 0,
+  totalTagCost: 0,
+  totalSave: 0,
+  logs: []
+}
+
+async function loadData() {
+  try {
+    let res = await fetch(`https://api.github.com/gists/${GIST_ID}`)
+    let json = await res.json()
+    let content = json.files['data.json'].content
+    store = JSON.parse(content)
+  } catch (e) {
+    console.log('首次使用，创建新数据')
+  }
+}
+
+async function saveData() {
+  await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+    method: 'PATCH',
+    headers: {
+      'Authorization': `token ${GIST_TOKEN}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      files: {
+        'data.json': { content: JSON.stringify(store, null, 2) }
+      }
+    })
+  })
+  render()
+}
+
+function render() {
+  const avgFuel = store.totalKm > 0 ? (store.totalL / (store.totalKm / 100)) : 0
+  const avgCostActual = store.totalKm > 0 ? (store.totalPay / store.totalKm) : 0
+  const avgCostTag = store.totalKm > 0 ? (store.totalTagCost / store.totalKm) : 0
+
+  let html = `
+  <div class="grid">
+    <div class="item">
+      <div class="label">挂牌油价总成本</div>
+      <div class="number">${store.totalTagCost.toFixed(2)} 元</div>
+    </div>
+    <div class="item">
+      <div class="label">实际支付总成本</div>
+      <div class="number green">${store.totalPay.toFixed(2)} 元</div>
+    </div>
+  </div>
+  <div class="item" style="background:#fff7f8;margin-top:12px">
+    <div class="label">累计省下</div>
+    <div class="number red">${store.totalSave.toFixed(2)} 元</div>
+  </div>
+  <div class="grid" style="margin-top:16px">
+    <div class="item">
+      <div class="label">总里程</div>
+      <div class="number">${store.totalKm.toFixed(1)} km</div>
+    </div>
+    <div class="item">
+      <div class="label">平均油耗</div>
+      <div class="number">${avgFuel.toFixed(2)} L/100km</div>
+    </div>
+  </div>
+  <div class="grid">
+    <div class="item">
+      <div class="label">平均每公里（挂牌）</div>
+      <div class="number">${avgCostTag.toFixed(3)} 元/km</div>
+    </div>
+    <div class="item">
+      <div class="label">平均每公里（实付）</div>
+      <div class="number green">${avgCostActual.toFixed(3)} 元/km</div>
+    </div>
+  </div>
+  `
+  document.getElementById('result').innerHTML = html
+
+  let logHtml = ''
+  store.logs.slice(0, 15).forEach(log => {
+    logHtml += `
+    <div class="log">
+      ${log.time}｜${log.km}km｜油耗 ${log.fuel.toFixed(2)}｜省 ${log.save.toFixed(2)}元
+    </div>`
+  })
+  document.getElementById('logs').innerHTML = logHtml
+}
+
+async function save() {
+  const odo = parseFloat(document.getElementById('odo').value)
+  const price_tag = parseFloat(document.getElementById('price_tag').value)
+  const liter = parseFloat(document.getElementById('liter').value)
+  const pay_actual = parseFloat(document.getElementById('pay_actual').value)
+
+  if (isNaN(odo) || isNaN(price_tag) || isNaN(liter) || isNaN(pay_actual)) {
+    alert('请填完整')
+    return
+  }
+
+  await loadData()
+  const tagCost = price_tag * liter
+  const save = tagCost - pay_actual
+  let km = 0
+  let fuel = 0
+
+  if (store.lastOdo != null && odo > store.lastOdo) {
+    km = odo - store.lastOdo
+    fuel = liter / (km / 100)
+  }
+
+  store.logs.unshift({
+    time: new Date().toLocaleString(),
+    odo,
+    km: km.toFixed(1),
+    fuel,
+    save,
+    liter,
+    pay_actual,
+    tagCost
+  })
+
+  store.lastOdo = odo
+  store.totalKm += km
+  store.totalL += liter
+  store.totalPay += pay_actual
+  store.totalTagCost += tagCost
+  store.totalSave += save
+
+  await saveData()
+
+  document.getElementById('odo').value = ''
+  document.getElementById('price_tag').value = ''
+  document.getElementById('liter').value = ''
+  document.getElementById('pay_actual').value = ''
+}
+
+async function resetData() {
+  if (!confirm('确定要清空所有记录吗？')) return
+  store = {
+    lastOdo: null,
+    totalKm: 0,
+    totalL: 0,
+    totalPay: 0,
+    totalTagCost: 0,
+    totalSave: 0,
+    logs: []
+  }
+  await saveData()
+}
+
+loadData()
+</script>
+</body>
+</html>
